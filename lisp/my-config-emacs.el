@@ -98,9 +98,11 @@
 
 (use-package dired
   :config
+  (add-hook 'dired-mode-hook 'hl-line-mode)
   (use-package dired-x
     :config
     (add-hook 'dired-mode-hook 'dired-omit-mode)
+    
     (when (eq system-type 'windows-nt)
       (setq dired-omit-files "^\\.?#\\|^\\.$\\|^\\.\\.$\\|^ntuser.*\\|NTUSER.*"))))
 
@@ -127,5 +129,10 @@
               ("M-o" . dired-omit-mode))
   :config
   (add-hook 'dired-mode-hook 'dired-omit-mode))
+
+(use-package projectile-ripgrep
+  :ensure t
+  :config
+  (define-key projectile-command-map (kbd "s r") 'projectile-ripgrep))
 
 (provide 'my-config-emacs)

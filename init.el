@@ -67,7 +67,7 @@
  '(frame-background-mode (quote dark))
  '(package-selected-packages
    (quote
-    (slime counsel ivy ivy-mode color-theme-sanityinc-tomorrow helm-projectile helm-ag helm-descbinds helm recentf-ext sly-company sly-quicklisp sly-macrostep sly-named-readtables sly helm-config zop-to-char which-key use-package solidity-mode smex smartparens restclient-test racer platformio-mode org-present org-plus-contrib minimal-theme markdown-mode magit macrostep lua-mode julia-shell irony-eldoc intero ggtags flymake-solidity flycheck-rust flycheck-irony exec-path-from-shell epresent elisp-slime-nav dockerfile-mode dired-quick-sort dired-atool diff-hl company-restclient company-quickhelp company-irony clj-refactor cider-eval-sexp-fu cargo anzu aggressive-indent adjust-parens)))
+    (projectile-ripgrep ripgrep-projectile ripgrep elpy slime counsel ivy ivy-mode color-theme-sanityinc-tomorrow helm-projectile helm-ag helm-descbinds helm recentf-ext sly-company sly-quicklisp sly-macrostep sly-named-readtables sly helm-config zop-to-char which-key use-package solidity-mode smex smartparens restclient-test racer platformio-mode org-present org-plus-contrib minimal-theme markdown-mode magit macrostep lua-mode julia-shell irony-eldoc intero ggtags flymake-solidity flycheck-rust flycheck-irony exec-path-from-shell epresent elisp-slime-nav dockerfile-mode dired-quick-sort dired-atool diff-hl company-restclient company-quickhelp company-irony clj-refactor cider-eval-sexp-fu cargo anzu aggressive-indent adjust-parens)))
  '(tool-bar-mode nil)
  '(vc-annotate-background nil)
  '(vc-annotate-color-map
