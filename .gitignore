@@ -1,0 +1,11 @@
+*~
+auto-save-list
+elpa
+.emacs.desktop*
+eshell
+projectile-bookmarks.eld
+projectile.cache
+recentf
+server
+smex-items
+url
