@@ -38,5 +38,8 @@
   :config
   (setq magit-define-global-key-bindings 'recommended))
 
+(use-package docker
+  :straight t)
+
 (setq inhibit-startup-message t
       inhibit-startup-screen t)
