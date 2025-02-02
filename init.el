@@ -23,3 +23,20 @@
   :straight t
   :config (which-key-mode)
   :diminish)
+
+(use-package slime
+  :straight t
+  :config
+  (setq slime-lisp-implementations
+	'((sbcl ("sbcl") :coding-system utf-8-unix)
+	  (clisp ("clisp" "-q") :coding-system utf-8-unix))))
+
+(setq inferior-lisp-program "sbcl")
+
+(use-package magit
+  :straight t
+  :config
+  (setq magit-define-global-key-bindings 'recommended))
+
+(setq inhibit-startup-message t
+      inhibit-startup-screen t)
