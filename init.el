@@ -29,7 +29,8 @@
   :config
   (setq slime-lisp-implementations
 	'((sbcl ("sbcl") :coding-system utf-8-unix)
-	  (clisp ("clisp" "-q") :coding-system utf-8-unix))))
+	  (clisp ("clisp" "-q") :coding-system utf-8-unix)))
+  :diminish slime-autodoc-mode)
 
 (setq inferior-lisp-program "sbcl")
 
@@ -40,6 +41,16 @@
 
 (use-package docker
   :straight t)
+
+(use-package eat
+  :straight t)
+
+(use-package exec-path-from-shell
+  :straight t
+  :config 
+  (when (or (memq window-system '(mac ns x))
+	    (daemonp))
+    (exec-path-from-shell-initialize)))
 
 (setq inhibit-startup-message t
       inhibit-startup-screen t)
