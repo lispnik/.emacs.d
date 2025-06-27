@@ -46,7 +46,7 @@
      (clisp ("clisp" "-q") :coding-system utf-8-unix)
      (ciel ("sbcl" "--core" ,(expand-file-name "~/Quicklisp/local-projects/CIEL/ciel-core") "--eval" "(in-package :ciel-user)"))))
   (sly-default-lisp 'sbcl)
-  (sly-db-focus-debugger . 'always))
+  (sly-db-focus-debugger 'always))
 
 (use-package clojure-mode :straight t)
 (use-package cider :straight t)
