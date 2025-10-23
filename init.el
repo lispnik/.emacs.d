@@ -84,6 +84,10 @@
 
 (use-package magit :straight t)
 
+(use-package diff-hl
+  :straight t
+  :config (global-diff-hl-mode))
+
 (use-package editorconfig
   :ensure nil
   :config (editorconfig-mode 1))
