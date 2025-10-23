@@ -86,6 +86,8 @@
 
 (use-package diff-hl
   :straight t
+  :after magit
+  :hook ((magit-post-refresh-hook . diff-hl-magit-post-refresh))
   :config (global-diff-hl-mode))
 
 (use-package editorconfig
