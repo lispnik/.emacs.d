@@ -100,7 +100,9 @@
 
 (use-package simple
   :ensure nil
-  :config (auto-save-mode))
+  :config
+  (auto-save-visited-mode)
+  (auto-save-mode))
 
 (use-package xt-mouse
   :ensure nil
