@@ -98,12 +98,6 @@
   :ensure nil
   :config (desktop-save-mode 1))
 
-(use-package simple
-  :ensure nil
-  :config
-  (auto-save-visited-mode)
-  (auto-save-mode))
-
 (use-package xt-mouse
   :ensure nil
   :config (xterm-mouse-mode 1))
@@ -121,3 +115,25 @@
 ;;      (ciel ("sbcl" "--core" ,(expand-file-name "~/Quicklisp/local-projects/CIEL/ciel-core") "--eval" "(in-package :ciel-user)"))))
 ;;   (sly-default-lisp 'sbcl)
 ;;   (sly-db-focus-debugger 'always))
+
+(auto-save-visited-mode 1)
+(auto-save-mode 1)
+
+
+(custom-set-variables
+ ;; custom-set-variables was added by Custom.
+ ;; If you edit it by hand, you could mess it up, so be careful.
+ ;; Your init file should contain only one such instance.
+ ;; If there is more than one, they won't work right.
+ '(diff-hl-draw-borders nil)
+ '(fringe-mode '(nil . 0) nil (fringe))
+ '(tool-bar-mode nil)
+ '(use-short-answers t))
+
+(custom-set-faces
+ ;; custom-set-faces was added by Custom.
+ ;; If you edit it by hand, you could mess it up, so be careful.
+ ;; Your init file should contain only one such instance.
+ ;; If there is more than one, they won't work right.
+ '(default ((t (:family "Menlo" :foundry "nil" :slant normal :weight regular :height 140 :width normal)))))
+
