@@ -105,20 +105,25 @@
 (use-package eat
   :straight t)
 
-;; (use-package sly
-;;   :straight t
-;;   :after (company)
-;;   :custom
-;;   (sly-lisp-implementations
-;;    `((sbcl ("sbcl" "--dynamic-space-size" "4Gb") :coding-system utf-8-unix)
-;;      (clisp ("clisp" "-q") :coding-system utf-8-unix)
-;;      (ciel ("sbcl" "--core" ,(expand-file-name "~/Quicklisp/local-projects/CIEL/ciel-core") "--eval" "(in-package :ciel-user)"))))
-;;   (sly-default-lisp 'sbcl)
-;;   (sly-db-focus-debugger 'always))
+(use-package vterm
+  :straight t)
+
+(use-package julia-snail
+  :straight t
+  :hook (julia-mode . julia-snail-mode))
+
+(use-package sly
+  :straight t
+  :custom
+  (sly-lisp-implementations
+   `((sbcl ("sbcl" "--dynamic-space-size" "4Gb") :coding-system utf-8-unix)
+     (clisp ("clisp" "-q") :coding-system utf-8-unix)
+     (ciel ("sbcl" "--core" ,(expand-file-name "~/Quicklisp/local-projects/CIEL/ciel-core") "--eval" "(in-package :ciel-user)"))))
+  (sly-default-lisp 'sbcl)
+  (sly-db-focus-debugger 'always))
 
 (auto-save-visited-mode 1)
 (auto-save-mode 1)
-
 
 (custom-set-variables
  ;; custom-set-variables was added by Custom.
