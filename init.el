@@ -17,61 +17,107 @@
   (load bootstrap-file nil 'nomessage))
 
 (straight-use-package 'use-package)
+(setq straight-use-package-by-default t)
 
-(use-package diminish :straight t)
+(use-package diminish)
 
 (use-package exec-path-from-shell
-  :straight t
   :if (or (memq window-system '(mac ns x))
           (daemonp))
   :config
   (exec-path-from-shell-initialize))
 
 (use-package which-key
-  :straight t
   :config (which-key-mode)
   :diminish)
 
-(use-package flycheck :straight t)
+(use-package monet
+  :straight (:type git :host github :repo "stevemolitor/monet"))
+
+(use-package claude-code
+    :straight (:type git :host github :repo "stevemolitor/claude-code.el")
+    :bind-keymap ("C-c c" . claude-code-command-map)
+    :config
+    (setq claude-code-terminal-backend 'eat)
+    (add-hook 'claude-code-process-environment-functions #'monet-start-server-function)
+    (add-hook 'claude-code-process-environment-functions
+              (lambda (_buf _dir) '("CLAUDE_CODE_DISABLE_ANIMATION=1")))
+    (monet-mode 1))
+
+(use-package flycheck)
 
 (use-package company
-  :straight t
-  :hook ((emacs-lisp-mode . company-mode)))
+  :hook ((emacs-lisp-mode . company-mode)
+         (lsp-mode . company-mode)))
 
-(use-package company-quickhelp :straight t)
+(use-package company-quickhelp
+  :config (company-quickhelp-mode))
+
+(setq read-process-output-max (* 1024 1024)
+      gc-cons-threshold (* 100 1024 1024))
 
 (use-package lsp-mode
-  :straight t
   :init
   (setq lsp-keymap-prefix "C-c l")
   :hook ((java-mode . lsp)
-         (lsp-mode . lsp-enable-which-key-integration))
-  :commands lsp)
+         (lsp-mode . lsp-enable-which-key-integration)
+         (lsp-mode . lsp-inlay-hints-mode)
+         (lsp-mode . lsp-headerline-breadcrumb-mode))
+  :commands lsp
+  :config
+  (add-to-list 'lsp-language-id-configuration '(tcl-mode . "tcl"))
+  (add-to-list 'lsp-language-id-configuration '(perl-mode . "pls"))
+  (lsp-register-client
+   (make-lsp-client :new-connection (lsp-stdio-connection "/Users/mkennedy/Projects/lsp/lsp.tcl")
+                    :activation-fn (lsp-activate-on "tcl")
+                    :server-id 'lsptcl))
+  (lsp-register-client
+   (make-lsp-client :new-connection (lsp-stdio-connection "/Users/mkennedy/Projects/perl5/bin/pls")
+                    :activation-fn (lsp-activate-on "perl")
+                    :server-id 'lsppls)))
 
 (use-package lsp-ui
-  :straight t
-  :commands lsp-ui-mode)
+  :hook (lsp-mode . lsp-ui-mode)
+  :custom
+  (lsp-ui-doc-enable t)
+  (lsp-ui-doc-position 'at-point)
+  (lsp-ui-sideline-enable t)
+  (lsp-ui-sideline-show-diagnostics t)
+  (lsp-ui-sideline-show-code-actions t)
+  (lsp-ui-peek-enable t))
 
-(use-package lsp-treemacs :straight t)
+(use-package lsp-treemacs)
 
 (use-package lsp-java
-  :straight t
+  :custom
+  (lsp-java-vmargs '("-XX:+UseParallelGC"
+                     "-XX:GCTimeRatio=4"
+                     "-XX:AdaptiveSizePolicyWeight=90"
+                     "-Dsun.zip.disableMemoryMapping=true"
+                     "-Xmx4G"
+                     "-Xms512m"))
+  (lsp-java-references-code-lens-enabled t)
+  (lsp-java-implementations-code-lens-enabled t)
+  (lsp-java-save-actions-organize-imports t)
+  (lsp-java-completion-guess-method-arguments t)
   :config
-  (let ((jar (car (sort (directory-files-recursively
-                         (expand-file-name "~/.m2/repository/org/projectlombok/lombok/")
-                         ".*lombok\\(-[0-9]+.[0-9]+.[0-9]+\\)?.jar$")
-                        :reverse t))))
-    (if (and jar (file-exists-p jar))
-        (add-to-list 'lsp-java-vmargs (format "-javaagent:%s" jar) t)
-      (warn "Missing %s" jar))))
+  (let* ((lombok-dir (expand-file-name "~/.m2/repository/org/projectlombok/lombok/"))
+         (jar (when (file-directory-p lombok-dir)
+                (car (sort (directory-files-recursively
+                            lombok-dir
+                            "lombok\\(-[0-9]+\\.[0-9]+\\.[0-9]+\\)?\\.jar$")
+                           :reverse t)))))
+    (when jar
+      (add-to-list 'lsp-java-vmargs (format "-javaagent:%s" jar) t))))
 
 ;; (use-package lsp-java-boot
+;;   :straight t
 ;;   :ensure nil
 ;;   :hook ((lsp-mode . lsp-lens-mode)
-;;       (java-mode . lsp-java-boot-lens-mode)))
+;;          (java-mode . lsp-java-boot-lens-mode)))
 
 (use-package dap-mode
-  :straight t
+  :straight t 
   :after lsp-mode
   :bind
   (:map dap-mode-map
@@ -80,12 +126,12 @@
         ("<f8>" . dap-next))
   :config (dap-auto-configure-mode))
 
-(use-package dap-java :ensure nil)
+;; (use-package dap-java
+;;   :ensure nil)
 
-(use-package magit :straight t)
+(use-package magit)
 
 (use-package diff-hl
-  :straight t
   :after magit
   :hook ((magit-post-refresh-hook . diff-hl-magit-post-refresh))
   :config (global-diff-hl-mode))
@@ -102,18 +148,14 @@
   :ensure nil
   :config (xterm-mouse-mode 1))
 
-(use-package eat
-  :straight t)
+(use-package eat)
 
-(use-package vterm
-  :straight t)
+(use-package vterm)
 
 (use-package julia-snail
-  :straight t
   :hook (julia-mode . julia-snail-mode))
 
 (use-package sly
-  :straight t
   :custom
   (sly-lisp-implementations
    `((sbcl ("sbcl" "--dynamic-space-size" "4Gb") :coding-system utf-8-unix)
@@ -123,7 +165,40 @@
   (sly-db-focus-debugger 'always))
 
 (auto-save-visited-mode 1)
-(auto-save-mode 1)
+
+(defun my/dired-mode-swiftsensors-hook ()
+  (when-let*  ((default-directory default-directory)
+               (tramp (file-remote-p default-directory 'method))
+               (host (file-remote-p default-directory 'host)))
+    (cond ((string-prefix-p "swiftsensors-dev" host)
+           (face-remap-add-relative
+            'default :background "#1C261C"))
+          ((string-prefix-p "swiftsensors-prod" host)
+            (face-remap-add-relative
+            'default :background "#472B2B")))))
+
+(use-package dired
+  :hook ((dired-mode . hl-line-mode)
+         (dired-mode . my/dired-mode-swiftsensors-hook)))
+
+(use-package visual-fill-column
+  :custom
+  (visual-fill-column-width 80)
+  (fill-column 80)
+  :hook (markdown-mode . (lambda ()
+                           (visual-line-mode 1)
+                           (visual-fill-column-mode 1))))
+
+(use-package gptel
+  :config
+  (setq gptel-backend
+        (gptel-make-ollama "Ollama"
+          :host "localhost:11434"
+          :stream t
+          :models '(deepseek-r1)))
+  (gptel-make-anthropic "Claude"
+    ;; TODO figure out how to use claude cli authentication or get an API key
+    :stream t))
 
 (custom-set-variables
  ;; custom-set-variables was added by Custom.
@@ -132,6 +207,11 @@
  ;; If there is more than one, they won't work right.
  '(diff-hl-draw-borders nil)
  '(fringe-mode '(nil . 0) nil (fringe))
+ '(ignored-local-variable-values
+   '((Syntax . COMMON-LISP)
+     (Package SERIES :use "COMMON-LISP" :colon-mode :external)
+     (syntax . ANSI-COMMON-LISP) (Package . USOCKET)
+     (Syntax . ANSI-Common-lisp) (Base . 10)))
  '(tool-bar-mode nil)
  '(use-short-answers t))
 
@@ -140,5 +220,5 @@
  ;; If you edit it by hand, you could mess it up, so be careful.
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
- '(default ((t (:family "Menlo" :foundry "nil" :slant normal :weight regular :height 140 :width normal)))))
-
+ ;; '(default ((t (:family "JetBrains Mono NL" :foundry "nil" :slant normal :weight regular :height 130 :width normal))))
+ )
