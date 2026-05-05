@@ -178,6 +178,7 @@
             'default :background "#472B2B")))))
 
 (use-package dired
+  :straight nil
   :hook ((dired-mode . hl-line-mode)
          (dired-mode . my/dired-mode-swiftsensors-hook)))
 
@@ -189,16 +190,6 @@
                            (visual-line-mode 1)
                            (visual-fill-column-mode 1))))
 
-(use-package gptel
-  :config
-  (setq gptel-backend
-        (gptel-make-ollama "Ollama"
-          :host "localhost:11434"
-          :stream t
-          :models '(deepseek-r1)))
-  (gptel-make-anthropic "Claude"
-    ;; TODO figure out how to use claude cli authentication or get an API key
-    :stream t))
 
 (custom-set-variables
  ;; custom-set-variables was added by Custom.
