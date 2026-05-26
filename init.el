@@ -142,18 +142,38 @@
 
 (use-package desktop
   :ensure nil
+  :custom
+  (desktop-auto-save-timeout 30)
+  (desktop-load-locked-desktop 'check-pid)
+  (desktop-save t)
   :config (desktop-save-mode 1))
 
 (use-package xt-mouse
   :ensure nil
   :config (xterm-mouse-mode 1))
 
-(use-package eat)
+(straight-use-package
+ '(eat :type git
+       :host codeberg
+       :repo "akib/emacs-eat"
+       :files ("*.el" ("term" "term/*.el") "*.texi"
+               "*.ti" ("terminfo/e" "terminfo/e/*")
+               ("terminfo/65" "terminfo/65/*")
+               ("integration" "integration/*")
+               (:exclude ".dir-locals.el" "*-tests.el"))))
 
 (use-package vterm)
 
 (use-package julia-snail
   :hook (julia-mode . julia-snail-mode))
+
+(use-package elisp-mode
+  :straight nil
+  :hook ((emacs-lisp-mode lisp-interaction-mode) . (lambda () (setq indent-tabs-mode nil))))
+
+(use-package lisp-mode
+  :straight nil
+  :hook (lisp-mode . (lambda () (setq indent-tabs-mode nil))))
 
 (use-package sly
   :custom
@@ -162,7 +182,8 @@
      (clisp ("clisp" "-q") :coding-system utf-8-unix)
      (ciel ("sbcl" "--core" ,(expand-file-name "~/Quicklisp/local-projects/CIEL/ciel-core") "--eval" "(in-package :ciel-user)"))))
   (sly-default-lisp 'sbcl)
-  (sly-db-focus-debugger 'always))
+  (sly-db-focus-debugger 'always)
+  :hook (sly-mrepl-mode . (lambda () (setq indent-tabs-mode nil))))
 
 (auto-save-visited-mode 1)
 
@@ -213,3 +234,4 @@
  ;; If there is more than one, they won't work right.
  ;; '(default ((t (:family "JetBrains Mono NL" :foundry "nil" :slant normal :weight regular :height 130 :width normal))))
  )
+(put 'dired-find-alternate-file 'disabled nil)
