@@ -38,7 +38,9 @@
     :straight (:type git :host github :repo "stevemolitor/claude-code.el")
     :bind-keymap ("C-c c" . claude-code-command-map)
     :config
-    (setq claude-code-terminal-backend 'eat)
+    ;; (setq claude-code-terminal-backend 'eat)
+    (setq claude-code-terminal-backend 'vterm)
+    ;; (setq claude-code-terminal-backend 'eat)
     (add-hook 'claude-code-process-environment-functions #'monet-start-server-function)
     (add-hook 'claude-code-process-environment-functions
               (lambda (_buf _dir) '("CLAUDE_CODE_DISABLE_ANIMATION=1")))
@@ -217,13 +219,14 @@
  ;; If you edit it by hand, you could mess it up, so be careful.
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
+ '(claude-code-program "claude-personal")
  '(diff-hl-draw-borders nil)
  '(fringe-mode '(nil . 0) nil (fringe))
  '(ignored-local-variable-values
    '((Syntax . COMMON-LISP)
      (Package SERIES :use "COMMON-LISP" :colon-mode :external)
-     (syntax . ANSI-COMMON-LISP) (Package . USOCKET)
-     (Syntax . ANSI-Common-lisp) (Base . 10)))
+     (syntax . ANSI-COMMON-LISP) (Package . USOCKET) (Syntax . ANSI-Common-lisp)
+     (Base . 10)))
  '(tool-bar-mode nil)
  '(use-short-answers t))
 
@@ -232,6 +235,5 @@
  ;; If you edit it by hand, you could mess it up, so be careful.
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
- ;; '(default ((t (:family "JetBrains Mono NL" :foundry "nil" :slant normal :weight regular :height 130 :width normal))))
  )
 (put 'dired-find-alternate-file 'disabled nil)
