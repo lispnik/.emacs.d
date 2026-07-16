@@ -359,6 +359,12 @@ root.  Opening any .java file from there starts the language server."
   (lsp-java-completion-import-order ["java" "javax" "com" "org"])
   (lsp-java-members-sort-order ["Type" "Field" "Method" "Constructor"])
   (lsp-java-signature-help-enabled t)
+  ;; Default Eclipse formatter profile, resolved relative to this config dir so
+  ;; it works from wherever the repo is checked out. A project opts in by
+  ;; setting `lsp-java-format-settings-profile' (e.g. "GoogleStyle") in its
+  ;; .dir-locals.el; projects that don't keep jdtls' built-in formatting.
+  (lsp-java-format-settings-url
+   (expand-file-name "eclipse-java-google-style.xml" user-emacs-directory))
   ;; Decompile library sources you don't have jars for (F3 into JDK/deps).
   (lsp-java-content-provider-preferred "fernflower")
   ;; Code generation (getters/setters, hashCode/equals, toString).
@@ -460,8 +466,7 @@ root.  Opening any .java file from there starts the language server."
 ;;             :path "/Users/mkennedy/Library/Java/JavaVirtualMachines/corretto-21.0.11/Contents/Home"
 ;;             :default t)])
 ;;        (lsp-java-vmargs . ("-XX:+UseParallelGC" "-Xmx6G"))
-;;        (lsp-java-format-settings-url
-;;         . "/abs/path/to/eclipse-java-google-style.xml")
+;;        ;; formatter XML is set globally; just pick a profile from it:
 ;;        (lsp-java-format-settings-profile . "GoogleStyle")
 ;;        (my/java-format-on-save . t)))
 ;;    (java-ts-mode
