@@ -156,9 +156,7 @@
   (with-eval-after-load 'lsp-mode
     (define-key lsp-mode-map [remap xref-find-apropos] #'consult-lsp-symbols)))
 
-(setq read-process-output-max (* 1024 1024)
-      gc-cons-threshold (* 100 1024 1024))
-
+;; gc-cons-threshold and read-process-output-max are set in early-init.el.
 (use-package lsp-mode
   :init
   (setq lsp-keymap-prefix "C-c l")
@@ -596,6 +594,34 @@ root.  Opening any .java file from there starts the language server."
 
 (use-package julia-snail
   :hook (julia-mode . julia-snail-mode))
+
+;; --- Zig ------------------------------------------------------------------
+;; zig + zls are installed; lsp-mode ships the zls client (lsp-zig), so Zig
+;; plugs into the same lsp/company/treemacs/eldoc stack as Java. `zig fmt'
+;; formats on save; ZLS gives completion, diagnostics, inlay hints, and
+;; build-on-save. (Debugging would need a codelldb/lldb-dap adapter installed.)
+(use-package zig-mode
+  :mode ("\\.zig\\'" "\\.zon\\'")
+  :hook (zig-mode . lsp)
+  :custom
+  (zig-format-on-save t)                 ; canonical `zig fmt' on save
+  :bind (:map zig-mode-map
+              ("C-c C-b" . zig-compile)      ; zig build
+              ("C-c C-r" . zig-run)          ; zig run
+              ("C-c C-t" . zig-test-buffer))) ; zig test <file>
+
+;; ZLS settings -- the client ships inside lsp-mode as lsp-zig.el.
+(use-package lsp-zig
+  :straight nil
+  :after lsp-mode
+  :custom
+  (lsp-zig-zls-executable "zls")             ; use the zls on PATH
+  (lsp-zig-enable-inlay-hints t)
+  (lsp-zig-inlay-hints-show-parameter-name t)
+  (lsp-zig-inlay-hints-show-variable-type-hints t)
+  (lsp-zig-enable-build-on-save t)           ; diagnostics from `zig build'
+  (lsp-zig-enable-argument-placeholders t)
+  (lsp-zls-enable-snippets t))
 
 (use-package sly
   :custom
