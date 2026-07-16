@@ -24,4 +24,5 @@ workspace/
 history
 projects
 sly-mrepl-history
-.extension/           # dap-mode downloaded debug adapters (e.g. codelldb)
+# dap-mode downloaded debug adapters (e.g. codelldb)
+.extension/
