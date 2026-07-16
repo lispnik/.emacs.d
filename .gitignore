@@ -13,3 +13,14 @@ eln-cache
 straight
 transient
 tramp
+
+# LSP / jdtls / dap-mode / tree-sitter runtime state (regenerated)
+.cache/
+.lsp-session-v1
+.dap-breakpoints
+eclipse.jdt.ls/
+tree-sitter/
+workspace/
+history
+projects
+sly-mrepl-history
