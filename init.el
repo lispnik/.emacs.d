@@ -608,7 +608,8 @@ root.  Opening any .java file from there starts the language server."
   :bind (:map zig-mode-map
               ("C-c C-b" . zig-compile)      ; zig build
               ("C-c C-r" . zig-run)          ; zig run
-              ("C-c C-t" . zig-test-buffer))) ; zig test <file>
+              ("C-c C-t" . zig-test-buffer)  ; zig test <file>
+              ("C-c C-d" . my/zig-debug)))   ; debug a built exe with codelldb
 
 ;; ZLS settings -- the client ships inside lsp-mode as lsp-zig.el.
 (use-package lsp-zig
@@ -622,6 +623,42 @@ root.  Opening any .java file from there starts the language server."
   (lsp-zig-enable-build-on-save t)           ; diagnostics from `zig build'
   (lsp-zig-enable-argument-placeholders t)
   (lsp-zls-enable-snippets t))
+
+;; Zig debugging via codelldb (installed under ~/.emacs.d/.extension). codelldb
+;; registers itself as dap's "lldb" provider; the template below is a starting
+;; point (edit :program via `dap-debug-edit-template'), and `my/zig-debug'
+;; prompts for a built executable and launches it under the debugger.
+(use-package dap-codelldb
+  :straight nil
+  :after dap-mode
+  :config
+  (dap-register-debug-template
+   "Zig :: codelldb launch"
+   (list :type "lldb"
+         :request "launch"
+         :name "Zig :: codelldb launch"
+         :program "${workspaceFolder}/zig-out/bin/"
+         :cwd "${workspaceFolder}")))
+
+(defun my/zig-debug (program)
+  "Debug a compiled Zig PROGRAM with codelldb.
+Build first (`zig build' in Debug mode emits debug info); completion
+defaults to the project's zig-out/bin directory."
+  (interactive
+   (list (read-file-name
+          "Zig executable to debug: "
+          (expand-file-name
+           "zig-out/bin/"
+           (or (ignore-errors (and (fboundp 'lsp-workspace-root) (lsp-workspace-root)))
+               (ignore-errors (project-root (project-current)))
+               default-directory)))))
+  (require 'dap-codelldb)
+  (dap-debug (list :type "lldb"
+                   :request "launch"
+                   :name "Zig :: Debug"
+                   :program (expand-file-name program)
+                   :cwd (file-name-directory (expand-file-name program))
+                   :args [])))
 
 (use-package sly
   :custom
