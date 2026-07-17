@@ -1,11 +1,9 @@
 ;; -*- lexical-binding: t; indent-tabs-mode: nil -*-
 
-;; Make lsp-mode use plists instead of hash-tables for server payloads -- a
-;; real throughput win on large projects (less consing / GC on every message).
-;; Must be set before lsp-mode is byte-compiled. After adding this, run once:
-;;   M-x straight-rebuild-package RET lsp-mode RET   (also lsp-ui, lsp-java,
-;;   lsp-treemacs, dap-mode) then restart Emacs.
-(setenv "LSP_USE_PLISTS" "true")
+;; NOTE: lsp-mode plists mode (LSP_USE_PLISTS) is intentionally OFF. Enabling it
+;; broke textDocument/documentSymbol with jdtls (empty/erroring imenu and
+;; lsp-treemacs structure). Hash-table mode is the known-good default. If you
+;; revisit plists, set the env here AND rebuild every lsp-* package with it set.
 
 (defvar bootstrap-version)
 (let ((bootstrap-file
@@ -181,11 +179,13 @@
          (lsp-mode . lsp-lens-mode))
   :commands lsp
   :custom
-  ;; Performance: JDT on a large Maven/Gradle tree emits a lot of file-watch
-  ;; requests; raise the threshold so lsp doesn't nag, and keep watchers on.
   (lsp-idle-delay 0.5)
-  (lsp-file-watch-threshold 10000)
-  (lsp-enable-file-watchers t)
+  ;; Do NOT let lsp-mode's own file watchers run on large Java trees -- each
+  ;; watched dir costs a file descriptor and macOS's default `ulimit -n' is
+  ;; low, so big projects hit "running out of file descriptors" (which also
+  ;; breaks the jdtls connection). jdtls watches the workspace itself, so
+  ;; disabling lsp's watchers is safe. Raise `ulimit -n' if you want them back.
+  (lsp-enable-file-watchers nil)
   ;; IDE-grade UX niceties.
   (lsp-enable-snippet t)
   (lsp-lens-enable t)
@@ -211,8 +211,8 @@
   (define-key lsp-command-map "d" #'lsp-describe-thing-at-point))
 
 ;; emacs-lsp-booster was disabled: it broke textDocument/documentSymbol
-;; (empty imenu / lsp-treemacs structure) with jdtls. plists stays on. See
-;; git history for the wiring if revisiting.
+;; (empty imenu / lsp-treemacs structure) with jdtls. plists is also off now
+;; (see top of file). See git history for the booster wiring if revisiting.
 
 (use-package lsp-ui
   :hook (lsp-mode . lsp-ui-mode)
