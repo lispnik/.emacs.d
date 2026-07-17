@@ -26,3 +26,6 @@ projects
 sly-mrepl-history
 # dap-mode downloaded debug adapters (e.g. codelldb)
 .extension/
+# no-littering relocated state
+var/
+etc/
