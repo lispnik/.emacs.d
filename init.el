@@ -424,12 +424,15 @@ root.  Opening any .java file from there starts the language server."
     (when jar
       (add-to-list 'lsp-java-vmargs (format "-javaagent:%s" jar) t))))
 
-;; Spring Boot lenses (run/refactor mapping endpoints, property completion).
+;; Spring Boot LS (boot-ls) disabled -- not doing Spring right now. lsp-mode
+;; auto-loads lsp-java-boot (it's in lsp-client-packages), so rather than
+;; removing it we turn its client off; boot-ls then never attaches a second
+;; server to Java buffers. For Spring work, set this back to t and re-add the
+;; `lsp-java-boot-lens-mode' hooks.
 (use-package lsp-java-boot
   :straight nil
   :after lsp-java
-  :hook ((java-mode . lsp-java-boot-lens-mode)
-         (java-ts-mode . lsp-java-boot-lens-mode)))
+  :custom (lsp-java-boot-enabled nil))
 
 ;; Reformat Java buffers with jdtls on save (IDE-style "reformat on save").
 ;; Organize-imports on save is already handled by lsp-java-save-actions.
