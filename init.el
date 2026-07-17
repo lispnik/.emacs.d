@@ -55,6 +55,12 @@
 ;; frames / to fetch the font file): M-x nerd-icons-install-fonts.
 (use-package nerd-icons)
 
+;; Colour theme (Protesilaos' ef-themes -- accessible, great in a terminal).
+;; Try others live with M-x ef-themes-select.
+(use-package ef-themes
+  :config
+  (load-theme 'ef-dark :no-confirm))
+
 (use-package monet
   :straight (:type git :host github :repo "stevemolitor/monet"))
 
@@ -200,6 +206,39 @@
   :config
   ;; C-c l d -> full documentation for the symbol at point (works in a TTY).
   (define-key lsp-command-map "d" #'lsp-describe-thing-at-point))
+
+;; --- emacs-lsp-booster ----------------------------------------------------
+;; Wrap LSP servers with the emacs-lsp-booster binary, which turns server JSON
+;; into pre-parsed elisp bytecode -- a big throughput win. Requires the binary
+;; on PATH AND plists (LSP_USE_PLISTS, set in early-init; run
+;; `straight-rebuild-package lsp-mode' once to activate it). No-op otherwise.
+(defun lsp-booster--advice-json-parse (old-fn &rest args)
+  "Try to parse bytecode from emacs-lsp-booster instead of JSON."
+  (or (when (equal (following-char) ?#)
+        (let ((bytecode (read (current-buffer))))
+          (when (byte-code-function-p bytecode)
+            (funcall bytecode))))
+      (apply old-fn args)))
+(advice-add (if (progn (require 'json) (fboundp 'json-parse-buffer))
+                'json-parse-buffer
+              'json-read)
+            :around #'lsp-booster--advice-json-parse)
+
+(defun lsp-booster--advice-final-command (old-fn cmd &optional test?)
+  "Prepend the emacs-lsp-booster command to the resolved LSP CMD."
+  (let ((orig-result (funcall old-fn cmd test?)))
+    (if (and (not test?)
+             (not (file-remote-p default-directory))
+             (bound-and-true-p lsp-use-plists)
+             (not (functionp 'json-rpc-connection))
+             (executable-find "emacs-lsp-booster"))
+        (progn
+          (when-let ((command-from-exec-path (executable-find (car orig-result))))
+            (setcar orig-result command-from-exec-path))
+          (message "Using emacs-lsp-booster for %s!" orig-result)
+          (cons "emacs-lsp-booster" orig-result))
+      orig-result)))
+(advice-add 'lsp-resolve-final-command :around #'lsp-booster--advice-final-command)
 
 (use-package lsp-ui
   :hook (lsp-mode . lsp-ui-mode)
@@ -557,6 +596,13 @@ root.  Opening any .java file from there starts the language server."
   :bind (("C-x o" . ace-window)
          ("M-O"   . ace-window))
   :custom (aw-scope 'frame))
+
+;; Jump to any visible location by typing a couple of chars (IntelliJ AceJump).
+(use-package avy
+  :bind (("C-;"   . avy-goto-char-timer)  ; type chars, then a hint letter
+         ("M-g c" . avy-goto-char)
+         ("M-g w" . avy-goto-word-1)
+         ("M-g a" . avy-goto-line)))
 
 ;; Richer *Help* buffers, wired onto the standard describe-* keys.
 (use-package helpful
