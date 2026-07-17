@@ -28,6 +28,31 @@
 (push '(vertical-scroll-bars . nil) default-frame-alist)
 (when (member window-system '(ns)) (set-background-color "#191D27"))
 
+;; Emacs 30.2 signals "Invalid face box" for a :box whose :color is
+;; `unspecified' (some packages, e.g. origami's origami-fold-header-face,
+;; declare faces that way), which aborts startup. Strip the offending :color
+;; so the face declaration succeeds. Set up here, before any package builds
+;; or loads its faces.
+(defun my/plist-remove (plist prop)
+  "Return a copy of PLIST with PROP (and its value) removed."
+  (let (result)
+    (while plist
+      (unless (eq (car plist) prop)
+        (setq result (plist-put result (car plist) (cadr plist))))
+      (setq plist (cddr plist)))
+    result))
+
+(advice-add
+ 'set-face-attribute :filter-args
+ (lambda (args)
+   "Drop `:color unspecified' from a :box attribute in ARGS."
+   (let ((box (plist-get (cddr args) :box)))
+     (if (and (consp box) (eq (plist-get box :color) 'unspecified))
+         (append (list (nth 0 args) (nth 1 args))
+                 (plist-put (copy-sequence (cddr args))
+                            :box (my/plist-remove box :color)))
+       args))))
+
 ;; Native compilation: this Emacs 30.2 can't build subr trampolines (emutls_w
 ;; link failure), so disable them; keep async-comp warnings out of the way.
 ;; Drop the trampoline line if a future Emacs build fixes the linker issue.

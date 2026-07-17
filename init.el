@@ -32,6 +32,14 @@
 
 (use-package diminish)
 
+;; Keep ~/.emacs.d tidy: relocate package state into var/ and etc/. Loaded
+;; eagerly and early so it redirects paths (recentf, savehist/history, lsp
+;; session, project list, ...) before those packages set them.
+(use-package no-littering
+  :config
+  (setq auto-save-file-name-transforms
+        `((".*" ,(no-littering-expand-var-file-name "auto-save/") t))))
+
 (use-package exec-path-from-shell
   :if (or (memq window-system '(mac ns x))
           (daemonp))
@@ -580,6 +588,13 @@ root.  Opening any .java file from there starts the language server."
   :straight nil
   :config (xterm-mouse-mode 1))
 
+;; Send kills/copies to the system clipboard from a TTY via OSC-52, so yank in
+;; Emacs -nw syncs with macOS (and works over SSH). Needs a terminal that
+;; allows clipboard access (e.g. iTerm2's "allow clipboard access" setting).
+(use-package clipetty
+  :diminish
+  :hook (after-init . global-clipetty-mode))
+
 (straight-use-package
  '(eat :type git
        :host codeberg
@@ -670,7 +685,7 @@ defaults to the project's zig-out/bin directory."
   (sly-db-focus-debugger 'always)
   ;; Fuzzy symbol completion + REPL input history that survives restarts.
   (sly-complete-symbol-function 'sly-flex-completions)
-  (sly-mrepl-history-file-name (locate-user-emacs-file "sly-mrepl-history"))
+  (sly-mrepl-history-file-name (no-littering-expand-var-file-name "sly-mrepl-history"))
   ;; Enable extra contribs (installed below) on top of the default sly-fancy.
   (sly-contribs '(sly-fancy
                   sly-quicklisp        ; sly-quickload systems from the REPL
