@@ -177,7 +177,6 @@
   :hook ((java-mode . lsp)
          (java-ts-mode . lsp)
          (lsp-mode . lsp-enable-which-key-integration)
-         (lsp-mode . lsp-inlay-hints-mode)
          (lsp-mode . lsp-headerline-breadcrumb-mode)
          (lsp-mode . lsp-lens-mode))
   :commands lsp
@@ -195,6 +194,10 @@
   (lsp-completion-show-detail t)
   (lsp-completion-show-kind t)
   (lsp-semantic-tokens-enable t)
+  ;; Inlay hints, capability-aware: lsp enables them only for servers that
+  ;; advertise textDocument/inlayHint (forcing lsp-inlay-hints-mode via a hook
+  ;; errors on servers that don't support it).
+  (lsp-inlay-hint-enable t)
   (lsp-eldoc-render-all nil)
   (lsp-eldoc-enable-hover t)
   (lsp-modeline-code-actions-enable t)
