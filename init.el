@@ -364,6 +364,17 @@ root.  Opening any .java file from there starts the language server."
   :after (treemacs nerd-icons)
   :config (treemacs-load-theme "nerd-icons"))
 
+;; Reliable "Structure" dock -- a persistent side panel of the current file's
+;; symbols, backed by imenu (which uses lsp's documentSymbol). It auto-refreshes
+;; and follows point, unlike the flaky lsp-treemacs-symbols tree (C-c t o).
+;; `C-c t i' toggles it.
+(use-package imenu-list
+  :bind ("C-c t i" . imenu-list-smart-toggle)
+  :custom
+  (imenu-list-focus-after-activation t)
+  (imenu-list-auto-resize t)
+  (imenu-list-position 'right))
+
 (use-package lsp-java
   :after lsp-mode
   :custom
