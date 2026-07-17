@@ -38,6 +38,17 @@
   (setq auto-save-file-name-transforms
         `((".*" ,(no-littering-expand-var-file-name "auto-save/") t))))
 
+;; no-littering relocates lsp's server-install and jdtls workspace dirs into
+;; var/, which orphans the jdtls install already under .cache/lsp -- lsp-java
+;; then thinks it isn't installed and re-downloads it (endless "Java[=== ]").
+;; Pin these back to their defaults so the existing server + imported workspace
+;; are reused. Small state (recentf/savehist/...) still benefits from var/.
+(with-eval-after-load 'lsp-mode
+  (setq lsp-server-install-dir (locate-user-emacs-file ".cache/lsp/")))
+(with-eval-after-load 'lsp-java
+  (setq lsp-java-server-install-dir (locate-user-emacs-file ".cache/lsp/eclipse.jdt.ls/")
+        lsp-java-workspace-dir (locate-user-emacs-file "workspace/")))
+
 (use-package exec-path-from-shell
   :if (or (memq window-system '(mac ns x))
           (daemonp))
