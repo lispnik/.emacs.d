@@ -30,25 +30,6 @@
 
 (use-package diminish)
 
-;; Keep ~/.emacs.d tidy: relocate package state into var/ and etc/. Loaded
-;; eagerly and early so it redirects paths (recentf, savehist/history, lsp
-;; session, project list, ...) before those packages set them.
-(use-package no-littering
-  :config
-  (setq auto-save-file-name-transforms
-        `((".*" ,(no-littering-expand-var-file-name "auto-save/") t))))
-
-;; no-littering relocates lsp's server-install and jdtls workspace dirs into
-;; var/, which orphans the jdtls install already under .cache/lsp -- lsp-java
-;; then thinks it isn't installed and re-downloads it (endless "Java[=== ]").
-;; Pin these back to their defaults so the existing server + imported workspace
-;; are reused. Small state (recentf/savehist/...) still benefits from var/.
-(with-eval-after-load 'lsp-mode
-  (setq lsp-server-install-dir (locate-user-emacs-file ".cache/lsp/")))
-(with-eval-after-load 'lsp-java
-  (setq lsp-java-server-install-dir (locate-user-emacs-file ".cache/lsp/eclipse.jdt.ls/")
-        lsp-java-workspace-dir (locate-user-emacs-file "workspace/")))
-
 (use-package exec-path-from-shell
   :if (or (memq window-system '(mac ns x))
           (daemonp))
@@ -730,7 +711,7 @@ defaults to the project's zig-out/bin directory."
   (sly-db-focus-debugger 'always)
   ;; Fuzzy symbol completion + REPL input history that survives restarts.
   (sly-complete-symbol-function 'sly-flex-completions)
-  (sly-mrepl-history-file-name (no-littering-expand-var-file-name "sly-mrepl-history"))
+  (sly-mrepl-history-file-name (locate-user-emacs-file "sly-mrepl-history"))
   ;; Enable extra contribs (installed below) on top of the default sly-fancy.
   (sly-contribs '(sly-fancy
                   sly-quicklisp        ; sly-quickload systems from the REPL
