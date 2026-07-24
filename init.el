@@ -57,13 +57,23 @@
 (use-package claude-code
     :straight (:type git :host github :repo "stevemolitor/claude-code.el")
     :bind-keymap ("C-c c" . claude-code-command-map)
+    :custom
+    (claude-code-program "claude-personal")
+    (claude-code-terminal-backend 'ghostel)
+    ;; (claude-code-terminal-backend 'eat)
+    ;; (claude-code-terminal-backend 'vterm)
     :config
-    (setq claude-code-terminal-backend 'eat)
-    ;; (setq claude-code-terminal-backend 'vterm)
     (add-hook 'claude-code-process-environment-functions #'monet-start-server-function)
     (add-hook 'claude-code-process-environment-functions
-              (lambda (_buf _dir) '("CLAUDE_CODE_DISABLE_ANIMATION=1")))
+              (lambda (_buf _dir)
+                '("CLAUDE_CODE_DISABLE_ANIMATION=1")))
     (monet-mode 1))
+
+;; (use-package agent-shell
+;;     :ensure t
+;;     :ensure-system-package
+;;     ((claude . "brew install claude-code")
+;;      (claude-agent-acp . "npm install -g @agentclientprotocol/claude-agent-acp")))
 
 (use-package flycheck)
 
@@ -631,6 +641,10 @@ root.  Opening any .java file from there starts the language server."
                ("integration" "integration/*")
                (:exclude ".dir-locals.el" "*-tests.el"))))
 
+(use-package ghostel
+  :custom
+  (ghostel-module-auto-install 'download))
+
 (use-package vterm)
 
 (use-package julia-snail
@@ -714,7 +728,7 @@ defaults to the project's zig-out/bin directory."
   (sly-mrepl-history-file-name (locate-user-emacs-file "sly-mrepl-history"))
   ;; Enable extra contribs (installed below) on top of the default sly-fancy.
   (sly-contribs '(sly-fancy
-                  sly-quicklisp        ; sly-quickload systems from the REPL
+;;                  sly-quicklisp        ; sly-quickload systems from the REPL
                   sly-asdf             ; load/reload/test ASDF systems
                   sly-macrostep        ; step through macroexpansions
                   sly-repl-ansi-color)); ANSI colours in the REPL (CIEL)
@@ -792,7 +806,6 @@ defaults to the project's zig-out/bin directory."
  ;; If you edit it by hand, you could mess it up, so be careful.
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
- '(claude-code-program "claude-personal")
  '(diff-hl-draw-borders nil)
  '(fringe-mode '(nil . 0) nil (fringe))
  '(ignored-local-variable-values
