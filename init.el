@@ -54,6 +54,12 @@
 (use-package monet
   :straight (:type git :host github :repo "stevemolitor/monet"))
 
+(defun my/claude-code-disable-animation (_buf _dir)
+  "Env addition that turns off claude-code's spinner animation.
+A named function (not an anonymous lambda) so it can be removed from
+`claude-code-process-environment-functions' later if needed."
+  (list "CLAUDE_CODE_DISABLE_ANIMATION=1"))
+
 (use-package claude-code
     :straight (:type git :host github :repo "stevemolitor/claude-code.el")
     :bind-keymap ("C-c c" . claude-code-command-map)
@@ -64,9 +70,7 @@
     ;; (claude-code-terminal-backend 'vterm)
     :config
     (add-hook 'claude-code-process-environment-functions #'monet-start-server-function)
-    (add-hook 'claude-code-process-environment-functions
-              (lambda (_buf _dir)
-                '("CLAUDE_CODE_DISABLE_ANIMATION=1")))
+    (add-hook 'claude-code-process-environment-functions #'my/claude-code-disable-animation)
     (monet-mode 1))
 
 ;; (use-package agent-shell
@@ -300,7 +304,47 @@
     (message "Installing tree-sitter grammar for Java...")
     (ignore-errors (treesit-install-language-grammar 'java)))
   (when (treesit-language-available-p 'java)
-    (add-to-list 'major-mode-remap-alist '(java-mode . java-ts-mode))))
+    (add-to-list 'major-mode-remap-alist '(java-mode . java-ts-mode)))
+
+  (add-to-list 'treesit-language-source-alist
+               '(python "https://github.com/tree-sitter/tree-sitter-python"))
+  (unless (treesit-language-available-p 'python)
+    (message "Installing tree-sitter grammar for Python...")
+    (ignore-errors (treesit-install-language-grammar 'python)))
+  (when (treesit-language-available-p 'python)
+    (add-to-list 'major-mode-remap-alist '(python-mode . python-ts-mode))))
+
+;; --- Python: basedpyright (types/nav) + ruff (lint/format) via lsp-mode -----
+;; basedpyright is a maintained Pyright fork; it does type-checking, completion,
+;; hover, go-to-def and inlay hints but no style-lint or formatting -- ruff
+;; (below) fills that in as an lsp add-on server. The hook `require's lsp-pyright
+;; so its client is registered before `lsp-deferred' connects; that's why Python
+;; is started here rather than via lsp-mode's own :hook (as Java is).
+;; Install the server once outside Emacs:  uv tool install basedpyright
+(use-package lsp-pyright
+  :custom
+  (lsp-pyright-langserver-command "basedpyright")
+  :hook ((python-mode python-ts-mode)
+         . (lambda () (require 'lsp-pyright) (lsp-deferred))))
+
+;; ruff's lsp client ships inside lsp-mode; it registers `:add-on? t' so it runs
+;; alongside basedpyright rather than replacing it. Diagnostics flow through
+;; flycheck automatically, and `lsp-format-buffer' routes to ruff (the only
+;; Python server here that advertises formatting).
+;; Install once outside Emacs:  brew install ruff   (needs >= 0.5.3 for `server')
+(use-package lsp-ruff
+  :straight nil                         ; part of lsp-mode
+  :after lsp-mode
+  :custom
+  (lsp-ruff-server-command '("ruff" "server")))
+
+;; Auto-detect the project's Python interpreter (.venv / poetry / pipenv / conda)
+;; and point basedpyright, ruff and flycheck at it buffer-locally, so they
+;; resolve the project's dependencies instead of system Python. Runs early
+;; (depth -10) so the executables are set before lsp starts.
+(use-package pet
+  :config
+  (add-hook 'python-base-mode-hook #'pet-mode -10))
 
 (defun my/open-java-project (dir)
   "Open DIR as a Java project in one shot.
@@ -429,11 +473,18 @@ root.  Opening any .java file from there starts the language server."
   ;; Lombok: attach the annotation-processing agent to jdtls so generated
   ;; methods (getters, builders, @Slf4j log, etc.) resolve without errors.
   (let* ((lombok-dir (expand-file-name "~/.m2/repository/org/projectlombok/lombok/"))
-         (jar (when (file-directory-p lombok-dir)
-                (car (sort (directory-files-recursively
-                            lombok-dir
-                            "lombok\\(-[0-9]+\\.[0-9]+\\.[0-9]+\\)?\\.jar$")
-                           :reverse t)))))
+         (jars (when (file-directory-p lombok-dir)
+                 (directory-files-recursively
+                  lombok-dir
+                  "lombok\\(-[0-9]+\\.[0-9]+\\.[0-9]+\\)?\\.jar$")))
+         ;; Pick the highest version by numeric comparison, not string order:
+         ;; a lexicographic sort ranks 1.18.9 above 1.18.30.
+         (jar (car (sort jars
+                         :key (lambda (f)
+                                (if (string-match "lombok-\\([0-9.]+\\)\\.jar\\'" f)
+                                    (match-string 1 f)
+                                  "0"))
+                         :lessp (lambda (a b) (version< b a))))))
     (when jar
       (add-to-list 'lsp-java-vmargs (format "-javaagent:%s" jar) t))))
 
@@ -451,16 +502,44 @@ root.  Opening any .java file from there starts the language server."
 ;; Organize-imports on save is already handled by lsp-java-save-actions.
 ;; Set `my/java-format-on-save' to nil (or remove the hook) to disable.
 (defvar my/java-format-on-save t
-  "When non-nil, run `lsp-format-buffer' on Java buffers before saving.")
+  "When non-nil, run `lsp-format-buffer' on Java buffers on an explicit save.")
+
+;; Format only on an *explicit* save command. `auto-save-visited-mode' saves
+;; file buffers from an idle timer, which runs outside the command loop, so
+;; `this-command' is not a save command then -- this keeps the timer's auto-save
+;; writing the file without reformatting mid-edit every few seconds, while
+;; C-x C-s / C-x s / C-x C-w still reformat.
+(defun my/explicit-save-p ()
+  "Non-nil when the current save came from an interactive save command."
+  (memq this-command '(save-buffer save-some-buffers write-file)))
 
 (defun my/java-format-before-save ()
-  "Format the current Java buffer via lsp when saving."
+  "Format the current Java buffer via lsp on an explicit save."
   (when (and my/java-format-on-save
+             (my/explicit-save-p)
              (bound-and-true-p lsp-mode)
              (derived-mode-p 'java-mode 'java-ts-mode))
     (ignore-errors (lsp-format-buffer))))
 
 (add-hook 'before-save-hook #'my/java-format-before-save)
+
+;; Reformat Python buffers with ruff on an explicit save, using the same
+;; `my/explicit-save-p' gate as Java so `auto-save-visited-mode's idle-timer
+;; saves write the file without reformatting mid-edit. `lsp-format-buffer'
+;; routes to ruff (basedpyright doesn't format). Set `my/python-format-on-save'
+;; to nil per project via .dir-locals.el to disable.
+(defvar my/python-format-on-save t
+  "When non-nil, run `lsp-format-buffer' (ruff) on Python buffers on an explicit save.")
+
+(defun my/python-format-before-save ()
+  "Format the current Python buffer via lsp/ruff on an explicit save."
+  (when (and my/python-format-on-save
+             (my/explicit-save-p)
+             (bound-and-true-p lsp-mode)
+             (derived-mode-p 'python-mode 'python-ts-mode))
+    (ignore-errors (lsp-format-buffer))))
+
+(add-hook 'before-save-hook #'my/python-format-before-save)
 
 ;; --- Per-project configuration via .dir-locals.el -------------------------
 ;; Mark the Java/LSP settings you'd most often pin per repo as *safe* local
@@ -485,7 +564,11 @@ root.  Opening any .java file from there starts the language server."
           (cons 'lsp-java-format-enabled #'booleanp)
           (cons 'lsp-java-save-actions-organize-imports #'booleanp)
           (cons 'lsp-file-watch-threshold #'integerp)
-          (cons 'my/java-format-on-save #'booleanp)))
+          (cons 'my/java-format-on-save #'booleanp)
+          (cons 'my/python-format-on-save #'booleanp)
+          ;; Per-project Python interpreter override (e.g. a venv), when `pet'
+          ;; can't autodetect it.
+          (cons 'lsp-pyright-python-executable-cmd #'stringp)))
   (put (car spec) 'safe-local-variable (cdr spec)))
 
 ;; Server-launch settings (lsp-java-vmargs, lsp-java-configuration-runtimes)
@@ -561,6 +644,15 @@ root.  Opening any .java file from there starts the language server."
          :port nil
          :name "Java Attach (remote, prompt)")))
 
+;; Python debugging through the same dap-mode UI/bindings (<f5>, C-c d ...).
+;; `M-x dap-debug' offers Python launch/attach templates. Needs debugpy in the
+;; active venv:  pip install debugpy
+(use-package dap-python
+  :straight nil                         ; part of dap-mode
+  :after dap-mode
+  :custom (dap-python-debugger 'debugpy)
+  :config (require 'dap-python))
+
 (use-package magit)
 
 (use-package diff-hl
@@ -580,12 +672,6 @@ root.  Opening any .java file from there starts the language server."
 (use-package winner
   :straight nil
   :config (winner-mode 1))
-
-;; Jump/swap windows by letter (M-O uppercase avoids clashing with M-o).
-(use-package ace-window
-  :bind (("C-x o" . ace-window)
-         ("M-O"   . ace-window))
-  :custom (aw-scope 'frame))
 
 ;; Jump to any visible location by typing a couple of chars (IntelliJ AceJump).
 (use-package avy
@@ -739,7 +825,10 @@ defaults to the project's zig-out/bin directory."
 ;; The contrib packages named in `sly-contribs' above -- installed here so
 ;; they're on `load-path' when sly requires them at connect time. `:after sly'
 ;; keeps them from dragging sly in at startup.
-(use-package sly-quicklisp :after sly)
+;; sly-quicklisp is intentionally not enabled (it's commented out of
+;; `sly-contribs' above), so it isn't installed here either. Re-add the
+;; contrib line and uncomment this to bring back REPL `sly-quickload'.
+;; (use-package sly-quicklisp :after sly)
 (use-package sly-asdf :after sly)
 (use-package sly-macrostep :after sly)
 (use-package sly-repl-ansi-color :after sly)
@@ -768,6 +857,35 @@ defaults to the project's zig-out/bin directory."
               ("C-c s t" . puni-transpose)
               ("C-c s v" . puni-convolute)))
 
+;; Highlight every occurrence of the symbol under point (auto, after a short
+;; idle) and let you pin sticky highlights on several symbols at once. Great
+;; in Lisp, where highlighting is textual -- no LSP/semantic tokens for CL.
+;; The nav/edit ops live under a `C-c h' (highlight) prefix rather than the
+;; package's default M-n/M-p, which are REPL history in `sly-mrepl'. Once you
+;; pin a symbol with `C-c h h', single keys (n/p/i/...) also work transiently
+;; while point sits on it, via symbol-overlay's own overlay keymap.
+(use-package symbol-overlay
+  :diminish
+  :hook ((lisp-mode emacs-lisp-mode lisp-interaction-mode sly-mrepl-mode)
+         . symbol-overlay-mode)
+  :custom-face
+  ;; The auto (idle) highlight uses `symbol-overlay-default-face', which by
+  ;; default inherits `highlight' (and even `lazy-highlight' is too faint on a
+  ;; near-black ef-dark background). Use an explicit high-contrast bg with a
+  ;; light fg + bold so the symbol under point is unmistakable. Set via
+  ;; :custom-face so it lands in the `user' theme and isn't clobbered by
+  ;; `ef-themes-select'. NOTE: this is now a fixed colour -- if you switch to a
+  ;; *light* theme, change the bg (e.g. a pale colour) or go back to
+  ;; `:inherit lazy-highlight' for theme-adaptivity.
+  (symbol-overlay-default-face
+   ((t (:background "#7b4bab" :foreground "#ffffff" :weight bold))))
+  :bind (:map symbol-overlay-mode-map
+              ("C-c h h" . symbol-overlay-put)          ; toggle a sticky highlight
+              ("C-c h n" . symbol-overlay-jump-next)
+              ("C-c h p" . symbol-overlay-jump-prev)
+              ("C-c h r" . symbol-overlay-rename)       ; rename all in buffer
+              ("C-c h R" . symbol-overlay-remove-all)))
+
 (auto-save-visited-mode 1)
 
 (defun my/dired-mode-swiftsensors-hook ()
@@ -791,6 +909,11 @@ defaults to the project's zig-out/bin directory."
   :after nerd-icons
   :diminish
   :hook (dired-mode . nerd-icons-dired-mode))
+
+;; Markdown editing. Without this package .md files open in text/fundamental
+;; mode and the visual-fill-column hook below never fires.
+(use-package markdown-mode
+  :mode ("\\.md\\'" "\\.markdown\\'"))
 
 (use-package visual-fill-column
   :custom

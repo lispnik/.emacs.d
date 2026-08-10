@@ -26,7 +26,7 @@
 ;; removing them (ignored on TTY frames).
 (push '(tool-bar-lines . 0) default-frame-alist)
 (push '(vertical-scroll-bars . nil) default-frame-alist)
-(when (member window-system '(ns)) (set-background-color "#191D27"))
+(when (eq window-system 'ns) (set-background-color "#191D27"))
 
 ;; Emacs 30.2 signals "Invalid face box" for a :box whose :color is
 ;; `unspecified' (some packages, e.g. origami's origami-fold-header-face,
