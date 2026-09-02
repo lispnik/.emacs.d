@@ -60,15 +60,112 @@ A named function (not an anonymous lambda) so it can be removed from
 `claude-code-process-environment-functions' later if needed."
   (list "CLAUDE_CODE_DISABLE_ANIMATION=1"))
 
+(defun my/claude-code-buffers-menu (&optional _items)
+  "Return live Claude buffers as menu items, for an easymenu `:filter'.
+
+Labels come from `claude-code--buffer-display-name' (`project:instance
+\(directory)'), which reads better here than the raw `*claude:...*'
+buffer name.  They are still passed through `menu-bar-update-buffers-1',
+the helper that builds the global Buffers menu, so the trailing status
+flags match it: `*' modified, `%' read-only, per `buffers-menu-show-status'.
+
+The Buffers menu's middle-truncation is deliberately not applied: it is
+tuned for bare buffer names and would gut the `name (directory)' form.
+Directories are already abbreviated to `~/...' by `claude-code--buffer-name'."
+  (if-let* ((buffers (claude-code--find-all-claude-buffers)))
+      (mapcar
+       (lambda (buf)
+         (vector (car (menu-bar-update-buffers-1
+                       (cons buf (claude-code--buffer-display-name buf))))
+                 (lambda ()
+                   (interactive)
+                   (claude-code--switch-to-selected-buffer buf))
+                 :help (buffer-name buf)))
+       buffers)
+    (list (vector "No Claude Buffers" #'ignore :enable nil))))
+
 (use-package claude-code
     :straight (:type git :host github :repo "stevemolitor/claude-code.el")
-    :bind-keymap ("C-c c" . claude-code-command-map)
+    :demand t
     :custom
     (claude-code-program "claude-personal")
     (claude-code-terminal-backend 'ghostel)
     ;; (claude-code-terminal-backend 'eat)
     ;; (claude-code-terminal-backend 'vterm)
     :config
+    ;; Bound here rather than via `:bind-keymap', which exists to defer loading.
+    (keymap-global-set "C-c c" claude-code-command-map)
+
+    ;; claude-code.el has a transient (C-c c m) but no menu-bar entry.  Mirror
+    ;; the transient's groups into a "Claude" menu.  Passing nil as the keymap
+    ;; only defines the menu; `define-key-after' below is what installs it, and
+    ;; is what lets us place it *among* the standard menus (right after Tools,
+    ;; before Help) instead of appended past Help.
+    (easy-menu-define my/claude-code-menu nil
+      "Menu for Claude Code."
+      '("Claude"
+        ["Start Claude" claude-code
+         :help "Start Claude in the current project"]
+        ["Start Claude (sandbox)" claude-code-sandbox
+         :help "Start Claude in a sandboxed environment"]
+        ["Start in Directory..." claude-code-start-in-directory
+         :help "Prompt for a directory and start Claude there"]
+        ["Continue Conversation" claude-code-continue
+         :help "Continue the most recent conversation"]
+        ["Resume Session..." claude-code-resume
+         :help "Pick a past session to resume"]
+        ["New Instance" claude-code-new-instance
+         :help "Start an additional Claude instance"]
+        "---"
+        ["Send Command..." claude-code-send-command
+         :help "Prompt for a command and send it to Claude"]
+        ["Send Command with Context..." claude-code-send-command-with-context
+         :help "Send a command along with the current file and line"]
+        ["Send Region or Buffer" claude-code-send-region
+         :help "Send the active region, or the whole buffer"]
+        ["Send Buffer File" claude-code-send-buffer-file
+         :help "Send the file backing the current buffer"]
+        ["Paste Image from Clipboard" claude-code-yank-media
+         :help "Yank an image from the clipboard into Claude"]
+        ["Fix Error at Point" claude-code-fix-error-at-point
+         :help "Ask Claude to fix the flycheck/flymake error at point"]
+        ["Fork Conversation" claude-code-fork
+         :help "Branch the conversation from an earlier point"]
+        ["Slash Commands..." claude-code-slash-commands
+         :help "Browse Claude's slash commands"]
+        "---"
+        ["Toggle Claude Window" claude-code-toggle
+         :help "Show or hide the Claude window"]
+        ["Switch to Claude Buffer" claude-code-switch-to-buffer
+         :help "Select the Claude buffer for this project"]
+        ["Select from All Claude Buffers" claude-code-select-buffer
+         :help "Pick among every running Claude buffer"]
+        ("Claude Buffers" :filter my/claude-code-buffers-menu)
+        ["Toggle Read-Only Mode" claude-code-toggle-read-only-mode
+         :help "Toggle read-only mode in the Claude buffer"]
+        ["Cycle Claude Mode" claude-code-cycle-mode
+         :help "Cycle Claude's permission mode"]
+        "---"
+        ("Quick Responses"
+         ["Send <return>" claude-code-send-return]
+         ["Send <escape>" claude-code-send-escape]
+         ["Send \"1\"" claude-code-send-1]
+         ["Send \"2\"" claude-code-send-2]
+         ["Send \"3\"" claude-code-send-3])
+        "---"
+        ["Transient Menu" claude-code-transient
+         :help "Open the full transient command menu"]
+        ["Kill Claude" claude-code-kill
+         :help "Kill the Claude instance for this project"]
+        ["Kill All Instances" claude-code-kill-all
+         :help "Kill every running Claude instance"]))
+
+    ;; Install into the global menu bar between Tools and Help.  `help-menu' is
+    ;; in `menu-bar-final-items', so it stays pinned last regardless.
+    (define-key-after global-map [menu-bar claude]
+      (easy-menu-binding my/claude-code-menu "Claude")
+      'tools)
+
     (add-hook 'claude-code-process-environment-functions #'monet-start-server-function)
     (add-hook 'claude-code-process-environment-functions #'my/claude-code-disable-animation)
     (monet-mode 1))
@@ -809,6 +906,10 @@ defaults to the project's zig-out/bin directory."
      (ciel ("sbcl" "--core" ,(expand-file-name "~/Quicklisp/local-projects/CIEL/ciel-core") "--eval" "(in-package :ciel-user)"))))
   (sly-default-lisp 'sbcl)
   (sly-db-focus-debugger 'always)
+  (sly-enable-evaluate-in-emacs t)
+  ;; Never let sly.el's load-time check evict SLIME from `lisp-mode-hook' (or
+  ;; prompt about it): `my/cl-switch-backend' below owns that hook.
+  (sly-replace-slime nil)
   ;; Fuzzy symbol completion + REPL input history that survives restarts.
   (sly-complete-symbol-function 'sly-flex-completions)
   (sly-mrepl-history-file-name (locate-user-emacs-file "sly-mrepl-history"))
@@ -833,12 +934,162 @@ defaults to the project's zig-out/bin directory."
 (use-package sly-macrostep :after sly)
 (use-package sly-repl-ansi-color :after sly)
 
+;;; ---------------------------------------------------------------------------
+;;; SLIME, installed beside SLY -- with exactly one of them active at a time.
+;;;
+;;; They cannot both be on.  Each hangs a minor mode off `lisp-mode-hook'
+;;; (`sly-editing-mode' / `slime-lisp-mode-hook'), and both of those minor modes
+;;; bind M-., M-,, C-c C-c, C-c C-k, C-c C-l ... in their own keymap.  With both
+;;; hooks installed, whichever minor mode was enabled last shadows the other, so
+;;; the keys in a .lisp buffer would silently talk to the wrong backend.
+;;;
+;;; The rule here is therefore: `lisp-mode-hook' carries exactly one of the two
+;;; entries, and `my/cl-switch-backend' is the only thing that moves it.
+;;;
+;;; Two load-time behaviours are why the switcher is more than a pair of
+;;; add-hook/remove-hook calls:
+;;;
+;;;   * The last form in slime.el unconditionally appends
+;;;     `slime-lisp-mode-hook' to `lisp-mode-hook'.  So *any* load of SLIME --
+;;;     including an incidental one -- needs a cleanup pass after it.
+;;;   * The last form in sly.el looks for `slime-lisp-mode-hook' in
+;;;     `lisp-mode-hook' and, per `sly-replace-slime', either prompts to evict
+;;;     SLIME or warns.  Pinning that to nil (in the SLY block above) and
+;;;     loading SLY only while SLIME's hook is absent takes its silent branch.
+;;;
+;;; Caveat: switching does not kill a running connection.  A live SLY REPL keeps
+;;; working as a buffer; it just stops owning the keys in your source files.
+;;; The switcher tells you when it leaves one behind.
+;;; ---------------------------------------------------------------------------
+
+(use-package slime
+  :defer t
+  :custom
+  ;; The same three implementations as the SLY block, so either backend can
+  ;; start whichever Lisp you want.
+  (slime-lisp-implementations
+   `((sbcl ("sbcl" "--dynamic-space-size" "4Gb") :coding-system utf-8-unix)
+     (clisp ("clisp" "-q") :coding-system utf-8-unix)
+     (ciel ("sbcl" "--core" ,(expand-file-name "~/Quicklisp/local-projects/CIEL/ciel-core") "--eval" "(in-package :ciel-user)"))))
+  (slime-default-lisp 'sbcl)
+  ;; Mirrors of the SLY settings: fuzzy completion, REPL history across restarts.
+  (slime-complete-symbol-function 'slime-fuzzy-complete-symbol)
+  (slime-repl-history-file (locate-user-emacs-file "slime-history.eld"))
+  ;; SLIME ships its contribs in-tree, so unlike SLY's these need no extra
+  ;; packages -- `slime-company' being the one exception, installed below.
+  ;; `slime-quicklisp' is left out to match the SLY block's choice.
+  (slime-contribs '(slime-fancy      ; repl, autodoc, inspector, fuzzy, ...
+                    slime-asdf       ; load/reload/test ASDF systems
+                    slime-macrostep  ; step through macroexpansions
+                    slime-media      ; inline images in the REPL (im:display)
+                    slime-company))  ; company backend (package below)
+  :hook (slime-repl-mode . company-mode))
+
+;; SLIME's company glue is a separate package (SLY just provides a capf).  It
+;; has to be on `load-path' before `slime-setup' requires `slime-company' as a
+;; contrib -- naming it here is enough, since straight installs at init time.
+(use-package slime-company
+  :after slime
+  :custom (slime-company-completion 'fuzzy))
+
+
+;;; --- The switch ------------------------------------------------------------
+
+(defvar my/cl-backend 'sly
+  "The active Common Lisp backend: `sly' or `slime'.
+
+The real state lives in `lisp-mode-hook' and in each Lisp buffer's minor
+modes; this variable only records it.  Change it with
+\\[my/cl-switch-backend] rather than by hand.  Its value here is the
+backend armed at startup.")
+
+(defconst my/cl--hook-entry
+  '((sly . sly-editing-mode)
+    (slime . slime-lisp-mode-hook))
+  "The `lisp-mode-hook' entry each backend installs.")
+
+(defun my/cl--other (backend)
+  "The backend that is not BACKEND."
+  (if (eq backend 'sly) 'slime 'sly))
+
+(defun my/cl--connected-p (backend)
+  "Non-nil if BACKEND has a live Lisp connection right now."
+  (pcase backend
+    ('sly (and (fboundp 'sly-connected-p) (sly-connected-p)))
+    ('slime (and (fboundp 'slime-connected-p) (slime-connected-p)))))
+
+(defun my/cl--set-buffer-backend (backend)
+  "In the current Lisp buffer, switch BACKEND on and the other one off."
+  (pcase (my/cl--other backend)
+    ;; `sly-editing-mode's body runs `(sly-mode 1)' unconditionally -- on
+    ;; disable as well as on enable -- so `sly-mode' has to be turned off
+    ;; *after* it, not before, or it comes straight back on.
+    ('sly (when (bound-and-true-p sly-editing-mode) (sly-editing-mode -1))
+          (when (bound-and-true-p sly-mode) (sly-mode -1)))
+    ('slime (when (bound-and-true-p slime-mode) (slime-mode -1))))
+  ;; Each of these also sets `lisp-indent-function' to its backend's flavour.
+  (pcase backend
+    ('sly (sly-editing-mode 1))
+    ('slime (slime-lisp-mode-hook))))
+
+(defun my/cl-switch-backend (backend)
+  "Give BACKEND (`sly' or `slime') ownership of Lisp editing, disabling the other.
+
+Moves the entry on `lisp-mode-hook', then fixes up every `lisp-mode'
+buffer that is already open.  Running connections and REPL buffers are
+left alone: they keep working, they just stop owning the keys in your
+source buffers."
+  (interactive
+   (list (intern (completing-read
+                  (format "Common Lisp backend (currently %s): " my/cl-backend)
+                  '("sly" "slime") nil t nil nil
+                  (symbol-name (my/cl--other my/cl-backend))))))
+  (let ((other (my/cl--other backend)))
+    ;; Load order is deliberate -- see the commentary above.
+    (pcase backend
+      ('sly (remove-hook 'lisp-mode-hook 'slime-lisp-mode-hook)
+            (require 'sly))
+      ('slime (require 'slime)            ; re-adds SLIME's hook, undone below
+              (slime-setup)))             ; loads the contribs
+    (remove-hook 'lisp-mode-hook (alist-get other my/cl--hook-entry))
+    (add-hook 'lisp-mode-hook (alist-get backend my/cl--hook-entry))
+    (dolist (buf (buffer-list))
+      (with-current-buffer buf
+        (when (derived-mode-p 'lisp-mode)
+          (my/cl--set-buffer-backend backend))))
+    (setq my/cl-backend backend)
+    (message "Common Lisp backend: %s%s" backend
+             (if (my/cl--connected-p other)
+                 (format " (a %s connection is still live)" other)
+               ""))))
+
+(defun my/cl-repl ()
+  "Start a REPL with whichever backend is active."
+  (interactive)
+  (call-interactively (if (eq my/cl-backend 'sly) #'sly #'slime)))
+
+(keymap-global-set "C-c L L" #'my/cl-switch-backend)
+(keymap-global-set "C-c L r" #'my/cl-repl)
+
+;; Both packages' autoloads push their own entry onto `lisp-mode-hook' at
+;; startup, so arm `my/cl-backend' before any Lisp buffer can open.  Choosing
+;; SLY stays lazy, since `sly-editing-mode' is autoloaded.  Choosing SLIME does
+;; load SLIME now: `slime-lisp-mode-hook' carries no autoload cookie, so
+;; straight's generated autoloads do not cover it and the hook would otherwise
+;; be void the first time you opened a .lisp file.
+(if (eq my/cl-backend 'sly)
+    (progn (remove-hook 'lisp-mode-hook 'slime-lisp-mode-hook)
+           (add-hook 'lisp-mode-hook 'sly-editing-mode))
+  (my/cl-switch-backend my/cl-backend))
+
+
 ;; Structural Lisp editing (slurp/barf/splice) that coexists with
 ;; electric-pair, unlike paredit. Covers CL buffers, elisp, and the REPL.
 ;; Bindings live under a `C-c s' (sexp) prefix because the classic paredit
 ;; keys (C-), C-(, M-[) don't transmit in most terminals.
 (use-package puni
-  :hook ((lisp-mode emacs-lisp-mode lisp-interaction-mode sly-mrepl-mode)
+  :hook ((lisp-mode emacs-lisp-mode lisp-interaction-mode
+          sly-mrepl-mode slime-repl-mode)
          . puni-mode)
   :bind (:map puni-mode-map
               ;; slurp / barf -- the paren char shows the direction
@@ -866,7 +1117,8 @@ defaults to the project's zig-out/bin directory."
 ;; while point sits on it, via symbol-overlay's own overlay keymap.
 (use-package symbol-overlay
   :diminish
-  :hook ((lisp-mode emacs-lisp-mode lisp-interaction-mode sly-mrepl-mode)
+  :hook ((lisp-mode emacs-lisp-mode lisp-interaction-mode
+          sly-mrepl-mode slime-repl-mode)
          . symbol-overlay-mode)
   :custom-face
   ;; The auto (idle) highlight uses `symbol-overlay-default-face', which by
