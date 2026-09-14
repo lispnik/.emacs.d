@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(nm *)",
+      "Bash(otool *)",
+      "Bash(codesign --verify *)",
+      "Bash(defaults read *)",
+      "Bash(brew info *)",
+      "Bash(xcrun simctl list *)",
+      "Bash(journalctl *)",
+      "Bash(xcrun devicectl list *)",
+      "Bash(codesign -d *)",
+      "mcp__swift-tools__gw_version",
+      "Bash(lipo -info *)",
+      "Bash(plutil -p *)",
+      "Bash(xcodebuild -list *)",
+      "Bash(xcrun --find *)",
+      "mcp__swift-tools__gw_list",
+      "mcp__swift-tools__gw_outdated",
+      "mcp__swift-tools__gw_pending-commands",
+      "mcp__swift-tools__acc_list",
+      "mcp__claude-in-chrome__tabs_context_mcp"
+    ]
+  }
+}
