@@ -665,7 +665,13 @@ root.  Opening any .java file from there starts the language server."
           (cons 'my/python-format-on-save #'booleanp)
           ;; Per-project Python interpreter override (e.g. a venv), when `pet'
           ;; can't autodetect it.
-          (cons 'lsp-pyright-python-executable-cmd #'stringp)))
+          (cons 'lsp-pyright-python-executable-cmd #'stringp)
+          ;; Swift: pin the Xcode scheme/destination so the build commands
+          ;; never prompt, and opt a project out of format-on-save.
+          (cons 'my/swift-format-on-save #'booleanp)
+          (cons 'my/swift-xcode-scheme #'stringp)
+          (cons 'my/swift-xcode-destination #'stringp)
+          (cons 'my/swift-xcode-configuration #'stringp)))
   (put (car spec) 'safe-local-variable (cdr spec)))
 
 ;; Server-launch settings (lsp-java-vmargs, lsp-java-configuration-runtimes)
@@ -894,6 +900,371 @@ defaults to the project's zig-out/bin directory."
   (dap-debug (list :type "lldb"
                    :request "launch"
                    :name "Zig :: Debug"
+                   :program (expand-file-name program)
+                   :cwd (file-name-directory (expand-file-name program))
+                   :args [])))
+
+;; --- Swift ----------------------------------------------------------------
+;; Two shapes of Swift project, one set of keys.  C-c C-b / C-c C-r / C-c C-t
+;; look at the project root and dispatch:
+;;
+;;   * SwiftPM (Package.swift) -- no per-project setup. sourcekit-lsp reads the
+;;     manifest itself, and the keys shell out to `swift build|run|test'.
+;;   * Xcode (.xcodeproj / .xcworkspace) -- sourcekit-lsp cannot read an Xcode
+;;     project, so it needs a buildServer.json at the root telling it how to
+;;     recover each file's compiler flags.  `C-c C-x s' writes one with
+;;     xcode-build-server; run it once per project, and again after adding
+;;     files or changing build settings, or the new files get no completion.
+;;     The keys then drive xcodebuild against a scheme and a destination.
+;;
+;; Scheme and destination are asked for once per project per session and
+;; remembered; a prefix argument (C-u) on any of the commands re-asks, and
+;; .dir-locals.el can pin them (see `my/swift-xcode-scheme' below).
+;;
+;; Tools are resolved with `xcrun --find' rather than taken from /usr/bin, so
+;; `xcode-select' switches the language server and formatter along with the
+;; compiler.  sourcekit-lsp and swift-format ship inside Xcode; the Xcode-project
+;; half also wants  brew install xcode-build-server.
+
+(defun my/swift-toolchain-tool (name)
+  "Absolute path to NAME in the active Xcode toolchain, or nil if absent.
+`xcrun --find' resolves against whichever Xcode `xcode-select' points at,
+so switching Xcode switches the tool instead of pinning the stub in /usr/bin."
+  (let ((path (string-trim
+               (shell-command-to-string
+                (concat "xcrun --find " (shell-quote-argument name) " 2>/dev/null")))))
+    (and (not (string-empty-p path))
+         (file-executable-p path)
+         path)))
+
+(defun my/swift-project-find (dir)
+  "Recognise a SwiftPM package or Xcode project at or above DIR.
+Without this, project.el falls back to version control, so a package that
+is not a git checkout looks rootless and both `my/swift-project-root' and
+lsp-mode's root guess land on the source subdirectory that happens to hold
+the file -- which puts the wrong folder in the lsp session and leaves
+sourcekit-lsp without the manifest it needs."
+  (let ((root (locate-dominating-file
+               dir (lambda (d)
+                     (or (file-exists-p (expand-file-name "Package.swift" d))
+                         (file-exists-p (expand-file-name "buildServer.json" d))
+                         (directory-files d nil "\\.xc\\(odeproj\\|workspace\\)\\'" t))))))
+    (when root
+      (cons 'transient (expand-file-name root)))))
+
+;; Ahead of the VC backend, so a Swift package inside a larger git repo still
+;; roots at its own Package.swift rather than the repository top.
+(add-hook 'project-find-functions #'my/swift-project-find -10)
+
+(defun my/swift-project-root ()
+  "Best guess at the current Swift project's root directory."
+  (or (ignore-errors (and (fboundp 'lsp-workspace-root) (lsp-workspace-root)))
+      (ignore-errors (project-root (project-current)))
+      default-directory))
+
+(use-package swift-mode
+  :mode "\\.swift\\'"
+  :interpreter "swift"
+  ;; `require' the client before connecting, same reason as lsp-pyright above.
+  :hook (swift-mode . (lambda () (require 'lsp-sourcekit) (lsp-deferred)))
+  :bind (:map swift-mode-map
+              ("C-c C-b"   . my/swift-build)     ; swift build | xcodebuild build
+              ("C-c C-r"   . my/swift-run)       ; swift run   | build + launch
+              ("C-c C-t"   . my/swift-test)      ; swift test  | xcodebuild test
+              ("C-c C-d"   . my/swift-debug)     ; codelldb on a built binary
+              ("C-c C-x s" . my/swift-xcode-setup)     ; write buildServer.json
+              ("C-c C-x d" . my/swift-xcode-forget)))  ; drop scheme/destination
+
+;; sourcekit-lsp, from the active toolchain.  It reads Package.swift directly
+;; for SwiftPM packages and buildServer.json for Xcode projects, so the same
+;; client covers both.
+(use-package lsp-sourcekit
+  :after lsp-mode
+  :custom
+  (lsp-sourcekit-executable (or (my/swift-toolchain-tool "sourcekit-lsp")
+                                "sourcekit-lsp")))
+
+;; --- Swift formatting ------------------------------------------------------
+;; swift-format ships in the Xcode toolchain.  sourcekit-lsp does not advertise
+;; textDocument/formatting, so this pipes the buffer through the binary rather
+;; than going via `lsp-format-buffer' the way Java and Python do.  It honours a
+;; .swift-format JSON config found by the tool's own search from the file's
+;; directory upward.  Set `my/swift-format-on-save' to nil per project in
+;; .dir-locals.el to disable.
+(defvar my/swift-format-on-save t
+  "When non-nil, run swift-format on Swift buffers on an explicit save.")
+
+(defun my/swift-format-buffer ()
+  "Reformat the current buffer with swift-format, preserving point.
+`replace-buffer-contents' splices in only what actually changed, so point,
+the mark and any markers survive.  On a formatter error the buffer is left
+untouched and the diagnostic is reported, so a syntax error mid-edit cannot
+eat your text."
+  (interactive)
+  (let ((bin (my/swift-toolchain-tool "swift-format")))
+    (if (not bin)
+        (message "swift-format not found in the active Xcode toolchain")
+      (let ((out (generate-new-buffer " *swift-format*"))
+            (err (make-temp-file "swift-format" nil ".err")))
+        (unwind-protect
+            (if (zerop (call-process-region (point-min) (point-max) bin
+                                            nil (list out err) nil
+                                            "format" "-"))
+                (replace-buffer-contents out)
+              (message "swift-format failed: %s"
+                       (string-trim (with-temp-buffer
+                                      (insert-file-contents err)
+                                      (buffer-string)))))
+          (kill-buffer out)
+          (delete-file err))))))
+
+(defun my/swift-format-before-save ()
+  "Format the current Swift buffer on an explicit save."
+  (when (and my/swift-format-on-save
+             (my/explicit-save-p)
+             (derived-mode-p 'swift-mode))
+    (my/swift-format-buffer)))
+
+(add-hook 'before-save-hook #'my/swift-format-before-save)
+
+;; --- Xcode project plumbing ------------------------------------------------
+(defvar my/swift-xcode-scheme nil
+  "Xcode scheme the Swift build commands should use.
+nil means ask once and remember for the session; pin it per project in
+.dir-locals.el to skip the prompt entirely.")
+
+(defvar my/swift-xcode-destination nil
+  "xcodebuild -destination string, e.g. \"platform=macOS\".
+nil means ask once and remember for the session.")
+
+(defvar my/swift-xcode-configuration "Debug"
+  "xcodebuild -configuration used by the build, test and run commands.")
+
+(defvar my/swift-xcode-choices (make-hash-table :test #'equal)
+  "Session cache of (SCHEME . DESTINATION) already chosen, keyed by project root.")
+
+(defun my/swift-xcode-container (&optional root)
+  "The .xcworkspace or .xcodeproj at ROOT, preferring the workspace.
+Returns nil when ROOT holds neither -- which is how the commands below
+tell a SwiftPM package from an Xcode project."
+  (let* ((root (or root (my/swift-project-root)))
+         (pick (lambda (ext)
+                 (car (directory-files root t (concat "\\." ext "\\'") t)))))
+    (or (funcall pick "xcworkspace") (funcall pick "xcodeproj"))))
+
+(defun my/swift-xcode-flag (container)
+  "The xcodebuild selector flag for CONTAINER: -workspace or -project."
+  (if (string-suffix-p ".xcworkspace" container) "-workspace" "-project"))
+
+(defun my/swift--json (command opener)
+  "Run COMMAND and parse its output as JSON starting at the first OPENER char.
+xcodebuild and simctl both prepend warnings to their JSON, so the text
+before the opening brace/bracket is discarded rather than parsed."
+  (let* ((out (shell-command-to-string command))
+         (start (string-search opener out)))
+    (and start (ignore-errors
+                 (json-parse-string (substring out start) :object-type 'alist)))))
+
+(defun my/swift-xcode-schemes (container)
+  "List of scheme names defined in CONTAINER."
+  (let ((data (my/swift--json
+               (format "xcodebuild -list -json %s %s 2>/dev/null"
+                       (my/swift-xcode-flag container)
+                       (shell-quote-argument container))
+               "{")))
+    (append (or (alist-get 'schemes (alist-get 'workspace data))
+                (alist-get 'schemes (alist-get 'project data)))
+            nil)))
+
+(defun my/swift-runtime-label (id)
+  "Human-readable label for CoreSimulator runtime identifier ID.
+\"com.apple.CoreSimulator.SimRuntime.iOS-26-5\" becomes \"iOS 26.5\"."
+  (let ((tail (car (last (split-string id "\\.")))))
+    (if (string-match "\\`\\([A-Za-z]+\\)-\\(.*\\)\\'" tail)
+        (concat (match-string 1 tail) " "
+                (replace-regexp-in-string "-" "." (match-string 2 tail)))
+      tail)))
+
+(defun my/swift-simulators ()
+  "Alist of (LABEL . UDID) for every available simulator."
+  (let ((data (my/swift--json
+               "xcrun simctl list devices available -j 2>/dev/null" "{"))
+        (result nil))
+    (dolist (runtime (alist-get 'devices data) (nreverse result))
+      (let ((label (my/swift-runtime-label (symbol-name (car runtime)))))
+        (seq-doseq (dev (cdr runtime))
+          (push (cons (format "%s -- %s" (alist-get 'name dev) label)
+                      (alist-get 'udid dev))
+                result))))))
+
+(defun my/swift-xcode-scheme-for (root container &optional force)
+  "Scheme to build for CONTAINER under ROOT, asked once and remembered.
+Non-nil FORCE re-asks even when a choice is already recorded."
+  (or (and (not force) my/swift-xcode-scheme)
+      (and (not force) (car (gethash root my/swift-xcode-choices)))
+      (let* ((schemes (my/swift-xcode-schemes container))
+             (scheme (completing-read "Xcode scheme: " schemes nil
+                                      (and schemes t) nil nil (car schemes))))
+        (puthash root (cons scheme (cdr (gethash root my/swift-xcode-choices)))
+                 my/swift-xcode-choices)
+        scheme)))
+
+(defun my/swift-xcode-destination-for (root &optional force)
+  "xcodebuild -destination for ROOT, asked once and remembered.
+Offers the Mac plus every booted-or-bootable simulator."
+  (or (and (not force) my/swift-xcode-destination)
+      (and (not force) (cdr (gethash root my/swift-xcode-choices)))
+      (let* ((sims (my/swift-simulators))
+             (pick (completing-read "Destination: "
+                                    (cons "My Mac" (mapcar #'car sims)) nil t))
+             (dest (if (equal pick "My Mac")
+                       "platform=macOS"
+                     (format "platform=iOS Simulator,id=%s"
+                             (cdr (assoc pick sims))))))
+        (puthash root (cons (car (gethash root my/swift-xcode-choices)) dest)
+                 my/swift-xcode-choices)
+        dest)))
+
+(defun my/swift-xcode-forget ()
+  "Forget this project's remembered Xcode scheme and destination."
+  (interactive)
+  (remhash (my/swift-project-root) my/swift-xcode-choices)
+  (message "Swift: scheme and destination will be asked again"))
+
+(defun my/swift-xcode-args (container scheme destination)
+  "Common xcodebuild arguments selecting CONTAINER, SCHEME and DESTINATION."
+  (format "%s %s -scheme %s -destination %s -configuration %s"
+          (my/swift-xcode-flag container)
+          (shell-quote-argument container)
+          (shell-quote-argument scheme)
+          (shell-quote-argument destination)
+          (shell-quote-argument my/swift-xcode-configuration)))
+
+(defun my/swift-xcode-setting (var)
+  "Shell snippet pulling build setting VAR out of \"$S\"."
+  (format "printf '%%s\\n' \"$S\" | awk -F' = ' '$1 ~ /%s$/ {print $2; exit}'" var))
+
+;; --- Commands: SwiftPM and Xcode, dispatched on the project shape ----------
+(defun my/swift-compile (command)
+  "Run COMMAND at the Swift project root through `compile'."
+  (let ((default-directory (my/swift-project-root)))
+    (compile command)))
+
+(defun my/swift-xcode-action (action force)
+  "Run xcodebuild ACTION (\"build\" or \"test\") on the current Xcode project."
+  (let* ((root (my/swift-project-root))
+         (container (my/swift-xcode-container root))
+         (scheme (my/swift-xcode-scheme-for root container force))
+         (dest (my/swift-xcode-destination-for root force)))
+    (my/swift-compile
+     (format "xcodebuild %s %s"
+             (my/swift-xcode-args container scheme dest) action))))
+
+(defun my/swift-build (&optional force)
+  "Build the current Swift project.
+Runs xcodebuild when the root holds an .xcodeproj/.xcworkspace, and
+`swift build' otherwise.  With prefix FORCE, re-ask scheme and destination."
+  (interactive "P")
+  (if (my/swift-xcode-container)
+      (my/swift-xcode-action "build" force)
+    (my/swift-compile "swift build")))
+
+(defun my/swift-test (&optional force)
+  "Run the current Swift project's tests.
+xcodebuild test for an Xcode project, `swift test' for a SwiftPM package."
+  (interactive "P")
+  (if (my/swift-xcode-container)
+      (my/swift-xcode-action "test" force)
+    (my/swift-compile "swift test")))
+
+(defun my/swift-run (&optional force)
+  "Build and run the current Swift project.
+For a SwiftPM package this is `swift run'.  For an Xcode project it builds
+the scheme, then either launches the .app on the chosen simulator (booting
+it and bringing Simulator.app forward first) or runs the Mac binary, with
+the app's stdout piped into the compilation buffer."
+  (interactive "P")
+  (let* ((root (my/swift-project-root))
+         (container (my/swift-xcode-container root)))
+    (if (not container)
+        (my/swift-compile "swift run")
+      (let* ((scheme (my/swift-xcode-scheme-for root container force))
+             (dest (my/swift-xcode-destination-for root force))
+             (args (my/swift-xcode-args container scheme dest))
+             (udid (and (string-match "id=\\([0-9A-Fa-f-]+\\)" dest)
+                        (match-string 1 dest))))
+        (my/swift-compile
+         (string-join
+          (append
+           (list "set -e"
+                 (format "xcodebuild %s build" args)
+                 (format "S=$(xcodebuild %s -showBuildSettings)" args)
+                 (format "D=$(%s)" (my/swift-xcode-setting "BUILT_PRODUCTS_DIR"))
+                 (format "N=$(%s)" (my/swift-xcode-setting "FULL_PRODUCT_NAME"))
+                 ;; A destination the scheme does not support makes xcodebuild
+                 ;; print its valid destinations and emit no settings; without
+                 ;; this guard the install below would be handed "/" and fail
+                 ;; with a far less obvious message.
+                 (concat "[ -n \"$D\" ] && [ -n \"$N\" ] || "
+                         "{ echo 'swift: no build settings -- is the destination"
+                         " valid for this scheme?' >&2; exit 1; }"))
+           (if udid
+               (list (format "B=$(%s)"
+                             (my/swift-xcode-setting "PRODUCT_BUNDLE_IDENTIFIER"))
+                     (format "xcrun simctl boot %s 2>/dev/null || true" udid)
+                     "open -a Simulator"
+                     (format "xcrun simctl install %s \"$D/$N\"" udid)
+                     (format "xcrun simctl launch --console-pty %s \"$B\"" udid))
+             (list "case \"$N\" in"
+                   "  *.app) \"$D/$N/Contents/MacOS/$(basename \"$N\" .app)\" ;;"
+                   "  *) \"$D/$N\" ;;"
+                   "esac")))
+          "\n"))))))
+
+(defun my/swift-xcode-setup (&optional force)
+  "Write buildServer.json at the project root so sourcekit-lsp reads this
+Xcode project.  Without it the server has no compiler flags for files in an
+.xcodeproj and completion/navigation stay empty.  Re-run after adding files
+or changing build settings.  With prefix FORCE, re-ask for the scheme."
+  (interactive "P")
+  (let* ((root (my/swift-project-root))
+         (container (or (my/swift-xcode-container root)
+                        (user-error "No .xcodeproj or .xcworkspace under %s" root))))
+    (unless (executable-find "xcode-build-server")
+      (user-error "xcode-build-server not found -- brew install xcode-build-server"))
+    (my/swift-compile
+     (format "xcode-build-server config %s %s -scheme %s"
+             (my/swift-xcode-flag container)
+             (shell-quote-argument container)
+             (shell-quote-argument
+              (my/swift-xcode-scheme-for root container force))))))
+
+;; Swift debugging reuses the codelldb adapter already installed for Zig.
+;; SwiftPM puts debug binaries in .build/debug; for an Xcode project, point the
+;; prompt at the .app's binary under DerivedData (or the built-products dir that
+;; `my/swift-run' prints).  Simulator processes need Xcode's own debugger, so
+;; this covers Mac and SwiftPM executables.
+(with-eval-after-load 'dap-codelldb
+  (dap-register-debug-template
+   "Swift :: codelldb launch"
+   (list :type "lldb"
+         :request "launch"
+         :name "Swift :: codelldb launch"
+         :program "${workspaceFolder}/.build/debug/"
+         :cwd "${workspaceFolder}")))
+
+(defun my/swift-debug (program)
+  "Debug a compiled Swift PROGRAM with codelldb.
+Build first so debug info exists; completion defaults to the SwiftPM
+.build/debug directory."
+  (interactive
+   (list (read-file-name
+          "Swift executable to debug: "
+          (expand-file-name ".build/debug/" (my/swift-project-root)))))
+  (require 'dap-codelldb)
+  (dap-debug (list :type "lldb"
+                   :request "launch"
+                   :name "Swift :: Debug"
                    :program (expand-file-name program)
                    :cwd (file-name-directory (expand-file-name program))
                    :args [])))
@@ -1175,6 +1546,25 @@ source buffers."
                            (visual-line-mode 1)
                            (visual-fill-column-mode 1))))
 
+
+;;; --- Local packages --------------------------------------------------------
+;;; ~/.emacs.d/site-lisp holds hand-written libraries that are not on any
+;;; archive, so they are loaded by path rather than by straight.el.
+
+(add-to-list 'load-path (expand-file-name (locate-user-emacs-file "site-lisp")))
+
+;; Objective-C selector documentation, out of a local SQLite index of Apple's
+;; API reference (built by ~/.emacs.d/objc-docs/build.py from the same DocC
+;; JSON that developer.apple.com and Dash both use).  Useful from .lisp buffers
+;; too, where selectors appear as strings: point inside
+;; "webView:didFinishNavigation:" and hit C-c o.  C-c O searches every abstract.
+(use-package objc-tools
+  :straight nil
+  :commands (objc-tools-lookup-selector objc-tools-search objc-tools-build
+             objc-tools-browse-selector objc-tools-open-in-dash
+             objc-tools-show-headers)
+  :bind (("C-c o" . objc-tools-lookup-selector)
+         ("C-c O" . objc-tools-search)))
 
 (custom-set-variables
  ;; custom-set-variables was added by Custom.
