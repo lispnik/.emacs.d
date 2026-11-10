@@ -1566,6 +1566,25 @@ source buffers."
   :bind (("C-c o" . objc-tools-lookup-selector)
          ("C-c O" . objc-tools-search)))
 
+;; ARM64 assembly (GNU as on Linux, clang on macOS).  `.s' and `.S' files only
+;; ever mean arm64 here; C-c C-c assembles, Flymake reports assembler errors.
+;;
+;; asm-lsp (`cargo install asm-lsp') adds hover docs for every A64 instruction,
+;; completion and label navigation.  Its global config,
+;; ~/Library/Application Support/asm-lsp/.asm-lsp.toml, selects gas + arm64.
+;; lsp-asm builds its client from `lsp-asm-active-modes' when it loads, so the
+;; mode must be in that list beforehand -- hence :init, not after-load.
+(use-package arm64-asm
+  :straight nil
+  :mode ("\\.[sS]\\'" . arm64-asm-mode)
+  :hook (arm64-asm-mode . lsp-deferred)
+  :init
+  (add-to-list 'exec-path (expand-file-name "~/.cargo/bin"))
+  (setq lsp-asm-active-modes
+        '(asm-mode fasm-mode masm-mode nasm-mode gas-mode arm64-asm-mode))
+  (with-eval-after-load 'lsp-mode
+    (add-to-list 'lsp-language-id-configuration '(arm64-asm-mode . "asm"))))
+
 (custom-set-variables
  ;; custom-set-variables was added by Custom.
  ;; If you edit it by hand, you could mess it up, so be careful.
