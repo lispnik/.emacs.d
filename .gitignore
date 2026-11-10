@@ -29,3 +29,9 @@ sly-mrepl-history
 # no-littering relocated state
 var/
 etc/
+
+# Generated Apple documentation index (built by objc-docs/build.py; ~150 MB).
+# The builder is tracked, the database it produces is not.
+objc-docs/*.sqlite
+objc-docs/*.sqlite-wal
+objc-docs/*.sqlite-shm
