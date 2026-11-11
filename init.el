@@ -1585,6 +1585,15 @@ source buffers."
   (with-eval-after-load 'lsp-mode
     (add-to-list 'lsp-language-id-configuration '(arm64-asm-mode . "asm"))))
 
+;; Hacker News in org-mode buffers: M-x hnreader-news for the front page,
+;; RET on a story's comments link to read the thread with foldable headings.
+;; hnreader depends on org; keep Emacs's bundled org rather than letting
+;; straight clone and build a second copy that would shadow it.
+(straight-use-package '(org :type built-in))
+(use-package hnreader
+  :commands (hnreader-news hnreader-best hnreader-ask hnreader-show
+             hnreader-newest hnreader-jobs hnreader-comment))
+
 (custom-set-variables
  ;; custom-set-variables was added by Custom.
  ;; If you edit it by hand, you could mess it up, so be careful.
